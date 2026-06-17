@@ -15,7 +15,7 @@ using Wolverine.Transports.Sending;
 
 namespace Wolverine.SqlServer.Transport;
 
-public class SqlServerQueue : Endpoint, IBrokerQueue, IDatabaseBackedEndpoint
+public partial class SqlServerQueue : Endpoint, IBrokerQueue, IDatabaseBackedEndpoint
 {
     internal static Uri ToUri(string name, string? databaseName)
     {
@@ -76,6 +76,16 @@ public class SqlServerQueue : Endpoint, IBrokerQueue, IDatabaseBackedEndpoint
 
     public override async ValueTask<IListener> BuildListenerAsync(IWolverineRuntime runtime, IReceiver receiver)
     {
+        if (IsNServiceBusInterop)
+        {
+            var connStr = NServiceBusConnectionString ?? Parent.Settings.ConnectionString!;
+#pragma warning disable IL2026
+            var nsbListener = new NServiceBusSqlServerListener(this, runtime, receiver, connStr, NServiceBusQualifiedTable);
+#pragma warning restore IL2026
+            await nsbListener.StartAsync();
+            return nsbListener;
+        }
+
         if (Parent.AutoProvision)
         {
             await SetupAsync(runtime.LoggerFactory.CreateLogger<SqlServerQueue>());
@@ -99,6 +109,13 @@ public class SqlServerQueue : Endpoint, IBrokerQueue, IDatabaseBackedEndpoint
     private void buildSenderIfMissing()
     {
         if (_sender != null) return;
+
+        if (IsNServiceBusInterop)
+        {
+            var connStr = NServiceBusConnectionString ?? Parent.Settings.ConnectionString!;
+            _sender = new NServiceBusSqlServerSender(this, connStr, NServiceBusQualifiedTable);
+            return;
+        }
 
         if (Parent.Databases != null)
         {
